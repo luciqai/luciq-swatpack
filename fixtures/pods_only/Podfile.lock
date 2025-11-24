@@ -1,0 +1,9 @@
+PODS:
+  - Luciq (19.2.0)
+
+DEPENDENCIES:
+  - Luciq
+
+SPEC CHECKSUMS:
+  Luciq: 1234567890abcdef
+

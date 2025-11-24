@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/luciq_swatpack/__init__.py
+src/luciq_swatpack/analysis.py
+src/luciq_swatpack/cli.py
+src/luciq_swatpack/main.py
+src/luciq_swatpack/plan.py
+src/luciq_swatpack/reporting.py
+src/luciq_swatpack/utils.py
+src/luciq_swatpack.egg-info/PKG-INFO
+src/luciq_swatpack.egg-info/SOURCES.txt
+src/luciq_swatpack.egg-info/dependency_links.txt
+src/luciq_swatpack.egg-info/entry_points.txt
+src/luciq_swatpack.egg-info/requires.txt
+src/luciq_swatpack.egg-info/top_level.txt
+tests/test_cli.py

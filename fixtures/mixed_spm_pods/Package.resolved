@@ -1,0 +1,9 @@
+{
+  "pins": [
+    {
+      "identity": "another",
+      "location": "https://github.com/example/another",
+      "state": {"version": "1.0.0"}
+    }
+  ]
+}

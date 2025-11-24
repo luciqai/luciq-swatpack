@@ -1,0 +1,11 @@
+{
+  "pins": [
+    {
+      "identity": "luciq",
+      "location": "https://github.com/luciqai/luciq-ios-sdk",
+      "state": {
+        "version": "19.1.0"
+      }
+    }
+  ]
+}

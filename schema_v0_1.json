@@ -1,0 +1,380 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Luciq SWAT Pack Snapshot v0.1",
+  "type": "object",
+  "required": [
+    "run_metadata",
+    "project_identity",
+    "luciq_sdk",
+    "luciq_usage",
+    "module_states",
+    "privacy_settings",
+    "token_analysis",
+    "symbolication",
+    "symbol_pipeline",
+    "environment",
+    "privacy_disclosure",
+    "extra_findings"
+  ],
+  "properties": {
+    "run_metadata": {
+      "type": "object",
+      "required": [
+        "tool_version",
+        "schema_version",
+        "timestamp_utc",
+        "run_id",
+        "platform_detected",
+        "scan_root",
+        "cli_arguments",
+        "typer_version"
+      ],
+      "properties": {
+        "tool_version": {"type": "string"},
+        "schema_version": {"type": "string"},
+        "timestamp_utc": {"type": "string"},
+        "run_id": {"type": "string"},
+        "platform_detected": {"type": "string"},
+        "scan_root": {"type": "string"},
+        "typer_version": {"type": "string"},
+        "cli_arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {"type": "string"},
+              {"type": "boolean"},
+              {"type": "array", "items": {"type": "string"}}
+            ]
+          }
+        }
+      }
+    },
+    "module_states": {
+      "type": "object",
+      "properties": {
+        "bug_reporting_enabled": {"type": ["boolean", "null"]},
+        "crash_reporting_enabled": {"type": ["boolean", "null"]},
+        "anr_monitor_enabled": {"type": ["boolean", "null"]},
+        "session_replay_enabled": {"type": ["boolean", "null"]},
+        "apm_enabled": {"type": ["boolean", "null"]},
+        "network_logs_enabled": {"type": ["boolean", "null"]},
+        "user_steps_enabled": {"type": ["boolean", "null"]},
+        "sdk_globally_disabled": {"type": ["boolean", "null"]},
+        "debug_logs_enabled": {"type": ["boolean", "null"]},
+        "ndk_module_present": {"type": ["boolean", "null"]},
+        "react_native_integration_detected": {"type": ["boolean", "null"]},
+        "flutter_integration_detected": {"type": ["boolean", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "privacy_settings": {
+      "type": "object",
+      "properties": {
+        "auto_masking_calls": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "private_view_calls_found": {"type": "boolean"},
+        "compose_private_modifiers_found": {"type": "boolean"},
+        "network_masking_rules_found": {"type": "boolean"}
+      },
+      "required": [
+        "auto_masking_calls",
+        "private_view_calls_found",
+        "compose_private_modifiers_found",
+        "network_masking_rules_found"
+      ],
+      "additionalProperties": false
+    },
+    "token_analysis": {
+      "type": "object",
+      "required": [
+        "tokens_detected",
+        "multiple_tokens_detected",
+        "placeholder_token_detected"
+      ],
+      "properties": {
+        "tokens_detected": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "value_masked"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "value_masked": {"type": "string"}
+            }
+          }
+        },
+        "multiple_tokens_detected": {"type": "boolean"},
+        "placeholder_token_detected": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "project_identity": {
+      "type": "object",
+      "required": [
+        "app_name",
+        "bundle_id",
+        "xcodeproj_paths",
+        "workspace_paths",
+        "build_systems_detected",
+        "deployment_targets_detected",
+        "swift_versions_detected"
+      ],
+      "properties": {
+        "app_name": {"type": "string"},
+        "bundle_id": {"type": "string"},
+        "xcodeproj_paths": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "workspace_paths": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "build_systems_detected": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "deployment_targets_detected": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "swift_versions_detected": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "luciq_sdk": {
+      "type": "object",
+      "required": [
+        "luciq_installed",
+        "integration_method",
+        "sdk_versions_detected",
+        "sdk_sources"
+      ],
+      "properties": {
+        "luciq_installed": {"type": "boolean"},
+        "integration_method": {"type": "string"},
+        "sdk_versions_detected": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "sdk_sources": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "luciq_usage": {
+      "type": "object",
+      "required": [
+        "init_found",
+        "init_locations",
+        "invocation_events_detected",
+        "network_logging_found",
+        "network_masking_found",
+        "screenshot_masking_found",
+        "repro_steps_found",
+        "identify_hooks_found",
+        "logout_hooks_found",
+        "usage_locations"
+      ],
+      "properties": {
+        "init_found": {"type": "boolean"},
+        "init_locations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "snippet_type"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "snippet_type": {"type": "string"}
+            }
+          }
+        },
+        "invocation_events_detected": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "network_logging_found": {"type": "boolean"},
+        "network_masking_found": {"type": "boolean"},
+        "screenshot_masking_found": {"type": "boolean"},
+        "repro_steps_found": {"type": "boolean"},
+        "identify_hooks_found": {"type": "boolean"},
+        "logout_hooks_found": {"type": "boolean"},
+        "usage_locations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "snippet_type"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "snippet_type": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "symbolication": {
+      "type": "object",
+      "required": [
+        "dsym_upload_detected",
+        "dsym_locations",
+        "mapping_or_sourcemap_detected",
+        "mapping_locations"
+      ],
+      "properties": {
+        "dsym_upload_detected": {"type": "boolean"},
+        "dsym_locations": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "mapping_or_sourcemap_detected": {"type": "boolean"},
+        "mapping_locations": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "symbol_pipeline": {
+      "type": "object",
+      "required": ["ios", "android", "react_native"],
+      "properties": {
+        "ios": {
+          "type": "object",
+          "required": ["scripts_detected", "endpoints", "app_tokens", "issues"],
+          "properties": {
+            "scripts_detected": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "endpoints": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "app_tokens": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "issues": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        },
+        "android": {
+          "type": "object",
+          "required": ["mapping_tasks", "endpoints", "app_tokens", "issues"],
+          "properties": {
+            "mapping_tasks": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "endpoints": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "app_tokens": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "issues": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        },
+        "react_native": {
+          "type": "object",
+          "required": [
+            "dependencies",
+            "env_flags",
+            "sourcemap_paths",
+            "issues"
+          ],
+          "properties": {
+            "dependencies": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "env_flags": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "sourcemap_paths": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "issues": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "ci_hints": {
+      "type": "object",
+      "required": ["ci_systems_detected", "config_paths"],
+      "properties": {
+        "ci_systems_detected": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "config_paths": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "macos_version": {"type": ["string", "null"]},
+        "xcode_version": {"type": ["string", "null"]},
+        "swift_version": {"type": ["string", "null"]},
+        "cocoapods_version": {"type": ["string", "null"]},
+        "carthage_version": {"type": ["string", "null"]}
+      }
+    },
+    "privacy_disclosure": {
+      "type": "object",
+      "required": [
+        "files_read",
+        "fields_captured",
+        "fields_not_captured"
+      ],
+      "properties": {
+        "files_read": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "fields_captured": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "fields_not_captured": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "extra_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "value", "rationale"],
+        "properties": {
+          "label": {"type": "string"},
+          "value": {"type": "string"},
+          "rationale": {"type": "string"}
+        }
+      }
+    }
+  }
+}

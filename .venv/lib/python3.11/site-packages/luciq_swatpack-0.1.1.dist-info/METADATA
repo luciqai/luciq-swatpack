@@ -1,0 +1,107 @@
+Metadata-Version: 2.4
+Name: luciq-swatpack
+Version: 0.1.1
+Summary: Deterministic Luciq SWAT Pack collector
+Author-email: Fares Nabil <support@luciq.ai>
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: typer>=0.12
+Requires-Dist: rich>=13.7
+Requires-Dist: jsonschema>=4.22
+Requires-Dist: pyyaml>=6.0
+
+# luciq-swatpack
+
+`luciq-swatpack` is a deterministic, privacy-conscious CLI that generates SWAT Pack diagnostics snapshots for Luciq Support/SE workflows. It runs entirely on the customer’s machine, never uploads data, and only records approved metadata (paths, versions, line numbers) so customers can confidently share the outputs with Luciq. The codebase is intentionally boring, dependency-light, and ready to extend to Android or other platforms without breaking today’s contract.
+
+## Guarantees
+
+- **Privacy first**: no source code, UI text, screenshots, tokens, or PII are ever persisted.
+- **Transparency**: every run prints a capture manifest + privacy FAQ describing exactly which files will be read, which metadata fields are extracted, and what is explicitly excluded. `--dry-run`/`--manifest-only` stop after this phase, and `--files-allowlist` tightens scope. `--explain` documents how each extractor works in plain English.
+- **Deterministic**: outputs are stable for the same repo (sorted lists, pinned schema `0.1`). Only the `run_id` UUID changes.
+- **Local only**: zero network requests, no uploads—customers decide when/if to send the artifacts.
+
+## Installation
+
+The project uses a standard `pyproject.toml`. From the repo root:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+This installs the `luciq-swatpack` console script. You can also run `python -m luciq_swatpack scan …` or, once published, install globally via `pipx install .`. Use `luciq-swatpack --version` to confirm which build you are running.
+
+## Usage
+
+```bash
+luciq-swatpack scan                                   # scan current directory
+luciq-swatpack scan /path/to/repo                     # explicit scan root
+luciq-swatpack scan --dry-run                         # manifest + privacy FAQ only
+luciq-swatpack scan --manifest-only                   # alias for --dry-run
+luciq-swatpack scan --platform ios                    # explicit platform flag
+luciq-swatpack scan --platform android                # prints "not supported yet"
+luciq-swatpack scan --include-ci-hints                # include CI metadata
+luciq-swatpack scan --output-dir ./out                # customize output path
+luciq-swatpack scan --explain                         # describe each extractor
+luciq-swatpack scan --files-allowlist \"**/*.swift\"    # restrict scanned files
+luciq-swatpack scan --files-allowlist \"**/Info.plist\" # combine allowlists
+python -m luciq_swatpack scan …                       # module entry point
+luciq-swatpack --version                              # show CLI version
+```
+
+Guard rails ensure the tool fails fast (with remediation tips) if it cannot find an Info.plist or Swift sources, which usually means the wrong path or an overly restrictive `--files-allowlist`. The capture planner auto-detects multiple `.xcodeproj` files, bundled xcframeworks, deterministic assets (`MockPost.json`, `MockLargePayload.json`), and other high-signal files so customers rarely have to curate paths manually.
+
+Outputs are written to `./luciq_swatpack_out/` by default:
+
+1. `luciq_swatpack.json` – machine-readable snapshot validated against `schema_v0.1`.
+2. `luciq_swatpack_report.md` – human-friendly summary (now with “Next steps” sections for optional features).
+3. `luciq_swatpack.log` – timestamped runtime log for transparency/auditing.
+
+## Manifest, Privacy FAQ, and Transparency
+
+Each run begins with a **Capture Manifest** that lists every file to be read, grouped by role (Info.plists, Swift sources, lockfiles, deterministic assets, CI configs, etc.). A **Privacy FAQ** immediately follows, explaining why the extraction is safe, what data is explicitly excluded, and how to further restrict scope. Use `--dry-run`/`--manifest-only` to stop after this phase, and `--explain` to print a plain-English description of each extractor.
+
+## Captured Signals
+
+`luciq_swatpack.json` adheres to `schema_v0.1` (see `schema_v0_1.json`) and currently includes:
+
+- **Run metadata**: tool version, schema version, deterministic timestamp, CLI arguments, Typer version, platform detection, and a single UUID `run_id`.
+- **Project identity**: bundle/app names, detected build systems (SPM, CocoaPods, Carthage, manual), deployment targets, Swift versions, project/workspace paths.
+- **Luciq SDK inventory**: integration method, version sources, manual xcframework detection, and module toggles (Bug/Crash Reporting, Session Replay, APM, ANR capture, global disablement, debug logging, RN/Flutter/NDK bridges, Instabug legacy remnants).
+- **Privacy posture**: screenshot masking presets, private view APIs or SwiftUI modifiers, network obfuscation handlers, repro-step configuration, consent prompts, crash callbacks, log capture toggles.
+- **Token analysis**: masked tokens, placeholder detection, multiple-token warnings—raw tokens never leave the machine.
+- **Usage locations**: file + line references for Luciq.start, NetworkLogger, identify/logOut anchors, masking calls, etc.
+- **Symbol pipeline**: iOS dSYM script references, endpoints, masked tokens, dSYM bundle paths; Android mapping scripts/obfuscators/endpoints; React Native sourcemap hints, dependency versions, CodePush/Expo presence.
+- **CI hints (optional)**: Fastlane, Bitrise, GitHub Actions, Jenkins, and other pipeline files when `--include-ci-hints` is set.
+- **Environment**: outputs from `sw_vers`, `xcodebuild -version`, `swift --version`, `pod --version`, `carthage version`, captured as plain strings.
+- **Extra findings**: heuristic notes flagging placeholder tokens, missing deterministic assets, absent network obfuscation handlers, missing symbol upload scripts, or other high-signal gaps.
+
+All lists/maps are sorted to keep diffs stable; only `run_id` changes between identical inputs.
+
+## Markdown Report
+
+`luciq_swatpack_report.md` mirrors the JSON but is optimized for Support/SE responders. It surfaces key detections (init locations, module toggles, privacy posture, symbol pipeline status), highlights risks from `extra_findings`, and adds **Next steps** recommendations for every optional feature (network logging hardening, screenshot masking, repro steps, CI uploads, etc.). The report is safe to attach directly to Luciq tickets or share with customers.
+
+## Development
+
+- Python 3.10+
+- Dependencies: Typer, Rich, jsonschema, PyYAML, pytest (see `pyproject.toml`).
+- Run tests with `pytest` or `python -m pytest`.
+
+## Fixtures & Tests
+
+`fixtures/` contains deterministic mini-repos (`spm_only`, `pods_only`, `mixed_spm_pods`, `luciq_not_installed`). Tests cover deterministic ordering, schema validation, manifest-only behavior, guard-rail messaging, and that `--dry-run` leaves no artefacts on disk.
+
+## Example Output
+
+The `examples/` directory contains freshly generated snapshots from the deterministic SwatSampleApp template (JSON + Markdown + log) so customers can preview exactly what gets captured before running the CLI themselves.
+
+## Troubleshooting & Tips
+
+- **Missing files**: If the scan errors with “No Info.plist” or “No Swift sources,” double-check the root path or relax `--files-allowlist`.
+- **Restricting scope**: Combine multiple `--files-allowlist` globs to focus on specific modules without editing the repo.
+- **Android flag**: `--platform android` prints “not supported yet” while preserving the CLI contract for future expansion.
+- **Clean reruns**: Delete or change `--output-dir` to regenerate fresh artifacts; logs accumulate per run for auditability.
+- **Sharing artifacts**: Outputs contain only metadata; customers can review `luciq_swatpack.json` and `luciq_swatpack_report.md` before sharing to verify privacy guarantees.

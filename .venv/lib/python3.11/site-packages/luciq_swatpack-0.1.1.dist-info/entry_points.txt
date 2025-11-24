@@ -1,0 +1,2 @@
+[console_scripts]
+luciq-swatpack = luciq_swatpack.cli:app
