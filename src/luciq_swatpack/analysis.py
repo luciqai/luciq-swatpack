@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .plan import CapturePlan
 from .utils import redact_home, relative_path, run_command
+from . import __version__
 
 INVOCATION_EVENT_PATTERN = re.compile(
     r"\.(shake|screenshot|floatingButton)"
@@ -50,7 +51,7 @@ def analyze_project(ctx: AnalysisContext) -> Dict[str, Any]:
     )
 
     run_metadata = {
-        "tool_version": "0.1.0",
+        "tool_version": __version__,
         "schema_version": "0.1",
         "timestamp_utc": datetime.now(timezone.utc)
         .replace(microsecond=0)
