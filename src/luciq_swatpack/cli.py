@@ -10,6 +10,26 @@ from . import __version__
 
 app = typer.Typer(help="Luciq SWAT Pack customer-side collector")
 
+_SCAN_BANNER = (
+    r" _               _        ",
+    r"| |   _   _  ___(_) __ _  ",
+    r"| |__| |_| |/ __| |/ _` | ",
+    r"|____|\___/|\___|_|\__, | ",
+    r"                      |_| ",
+    "",
+    r"   _____ _      ______  ______   ___  ___  _____ __ __",
+    r"  / ___/| | /| / / __ |/_  __/  / _ \/ _ \/ ___// //_/",
+    r" _\ \   | |/ |/ / /_| | / /    / ___/ __ / /__ / ,<   ",
+    r"/___/   |__/|__/_/  |_|/_/    /_/  /_/ |_\___//_/|_|  ",
+)
+
+
+def _print_scan_banner() -> None:
+    """Minimal banner for full scan command."""
+    for line in _SCAN_BANNER:
+        typer.echo(line)
+    typer.echo("")
+
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -81,6 +101,7 @@ def scan_command(
     ),
 ) -> None:
     """Generate a SWAT Pack snapshot."""
+    _print_scan_banner()
     effective_dry_run = dry_run or manifest_only
     cli_arguments = {
         "path": str(path),

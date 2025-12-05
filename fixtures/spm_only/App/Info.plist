@@ -6,5 +6,7 @@
     <string>SPMSample</string>
     <key>CFBundleIdentifier</key>
     <string>com.example.spmsample</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Needed for Luciq voice notes.</string>
 </dict>
 </plist>

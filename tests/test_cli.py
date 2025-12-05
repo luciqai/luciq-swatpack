@@ -37,6 +37,15 @@ def test_spm_scan_produces_outputs(tmp_path):
     assert data["luciq_sdk"]["luciq_installed"] is True
     assert data["luciq_usage"]["init_found"] is True
     assert "ci_hints" in data
+    assert data["feature_flag_summary"]["events_detected"] >= 1
+    assert data["invocation_summary"]["programmatic_invocations"]
+    assert data["custom_logging"]["log_calls"]
+    ios_perms = data["permissions_summary"]["ios_usage_descriptions"]
+    assert ios_perms["microphone"] is True
+    assert ios_perms.get("photo_library", False) is False
+    missing_perms = data["attachment_summary"]["required_permissions_missing"]
+    assert "photo_library" in missing_perms
+    assert data["release_artifacts"]["app_store_keys_detected"] == []
 
 
 def test_no_luciq_detected(tmp_path):

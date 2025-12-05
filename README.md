@@ -2,6 +2,22 @@
 
 `luciq-swatpack` is a deterministic, privacy-conscious CLI that generates SWAT Pack diagnostics snapshots for Luciq Support/SE workflows. It runs entirely on the customer’s machine, never uploads data, and only records approved metadata (paths, versions, line numbers) so customers can confidently share the outputs with Luciq. The codebase is intentionally boring, dependency-light, and ready to extend to Android or other platforms without breaking today’s contract.
 
+## Quick start (pip install)
+
+If you only need the CLI (no repo cloning required):
+
+```bash
+# make sure Python 3.10+ is on PATH (macOS: /opt/homebrew/bin/python3)
+python3 -m pip install --upgrade pip
+python3 -m pip install luciq-swatpack
+luciq-swatpack --version
+
+# run against any checkout (defaults to current directory)
+luciq-swatpack scan /path/to/app --include-ci-hints --output-dir ./luciq_swatpack_out
+```
+
+The command prints the capture manifest + privacy FAQ before reading any files, then writes `luciq_swatpack.json`, `luciq_swatpack_report.md`, and `luciq_swatpack.log` into the chosen `--output-dir`. Delete the folder any time to regenerate a clean run. For air‑gapped demos, keep a pre-built wheel in `dist/` and run `python3 -m pip install dist/luciq_swatpack-<version>-py3-none-any.whl`.
+
 ## Guarantees
 
 - **Privacy first**: no source code, UI text, screenshots, tokens, or PII are ever persisted.
@@ -59,11 +75,18 @@ Each run begins with a **Capture Manifest** that lists every file to be read, gr
 - **Project identity**: bundle/app names, detected build systems (SPM, CocoaPods, Carthage, manual), deployment targets, Swift versions, project/workspace paths.
 - **Luciq SDK inventory**: integration method, version sources, manual xcframework detection, and module toggles (Bug/Crash Reporting, Session Replay, APM, ANR capture, global disablement, debug logging, RN/Flutter/NDK bridges, Instabug legacy remnants).
 - **Privacy posture**: screenshot masking presets, private view APIs or SwiftUI modifiers, network obfuscation handlers, repro-step configuration, consent prompts, crash callbacks, log capture toggles.
+- **Network masking detail**: which sensitive headers/body fields are obfuscated and which ones still need coverage.
 - **Token analysis**: masked tokens, placeholder detection, multiple-token warnings—raw tokens never leave the machine.
 - **Usage locations**: file + line references for Luciq.start, NetworkLogger, identify/logOut anchors, masking calls, etc.
+- **Feature flags & experiments**: every add/remove call with flag names/variants plus a high-level summary showing which experiments were detected and whether flags are cleared on logout.
+- **Invocation overview**: enabled gestures alongside any programmatic `Luciq.show()` calls so you can confirm there is at least one entry point.
+- **Attachment & permission readiness**: whether attachment APIs are configured and if Info.plist usage descriptions / Android permissions exist for microphone or photo access.
+- **Custom logging & user attributes**: references to `Luciq.log(...)`, `setCustomData`, etc., to reveal what extra context the app pushes to Luciq.
 - **Symbol pipeline**: iOS dSYM script references, endpoints, masked tokens, dSYM bundle paths; Android mapping scripts/obfuscators/endpoints; React Native sourcemap hints, dependency versions, CodePush/Expo presence.
 - **CI hints (optional)**: Fastlane, Bitrise, GitHub Actions, Jenkins, and other pipeline files when `--include-ci-hints` is set.
 - **Environment**: outputs from `sw_vers`, `xcodebuild -version`, `swift --version`, `pod --version`, `carthage version`, captured as plain strings.
+- **Release artifacts**: App Store Connect `.p8` keys, Google Play service-account JSON, and Luciq team-ownership configs if they exist in the repo.
+- **Permissions summary**: one glance view of iOS usage-description keys and Android manifest permissions that Luciq features depend on.
 - **Extra findings**: heuristic notes flagging placeholder tokens, missing deterministic assets, absent network obfuscation handlers, missing symbol upload scripts, or other high-signal gaps.
 
 All lists/maps are sorted to keep diffs stable; only `run_id` changes between identical inputs.

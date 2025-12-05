@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import plistlib
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,9 +13,151 @@ from .plan import CapturePlan
 from .utils import redact_home, relative_path, run_command
 from . import __version__
 
-INVOCATION_EVENT_PATTERN = re.compile(
-    r"\.(shake|screenshot|floatingButton)"
-)
+INVOCATION_EVENT_PATTERN = re.compile(r"\.(shake|screenshot|floatingButton)")
+
+FEATURE_API_PATTERNS = {
+    "Luciq.addFeatureFlag": "add_feature_flag",
+    "Luciq.addFeatureFlags": "add_feature_flags",
+    "Luciq.removeFeatureFlag": "remove_feature_flag",
+    "Luciq.removeFeatureFlags": "remove_feature_flags",
+    "Luciq.removeAllFeatureFlags": "remove_all_feature_flags",
+    "Luciq.checkFeatures": "check_features",
+}
+
+MODULE_DEFAULT_TRUE = {
+    "bug_reporting_enabled",
+    "crash_reporting_enabled",
+    "anr_monitor_enabled",
+    "session_replay_enabled",
+    "apm_enabled",
+    "network_logs_enabled",
+    "user_steps_enabled",
+    "surveys_enabled",
+    "feature_requests_enabled",
+    "in_app_replies_enabled",
+    "in_app_chat_enabled",
+    "oom_monitor_enabled",
+}
+
+MODULE_DEFAULT_FALSE = {
+    "sdk_globally_disabled",
+    "debug_logs_enabled",
+}
+
+NETWORK_SENSITIVE_HEADERS = [
+    "Authorization",
+    "Cookie",
+    "X-API-Key",
+    "Set-Cookie",
+]
+NETWORK_SENSITIVE_BODY_FIELDS = [
+    "password",
+    "token",
+    "access_token",
+    "refresh_token",
+    "ssn",
+    "email",
+]
+
+IOS_USAGE_DESCRIPTION_KEYS = {
+    "NSCameraUsageDescription": "camera",
+    "NSMicrophoneUsageDescription": "microphone",
+    "NSPhotoLibraryUsageDescription": "photo_library",
+    "NSPhotoLibraryAddUsageDescription": "photo_library_add",
+}
+
+ANDROID_PERMISSION_KEYS = {
+    "android.permission.INTERNET": "internet",
+    "android.permission.ACCESS_NETWORK_STATE": "network_state",
+    "android.permission.RECORD_AUDIO": "record_audio",
+    "android.permission.READ_EXTERNAL_STORAGE": "read_storage",
+    "android.permission.WRITE_EXTERNAL_STORAGE": "write_storage",
+    "android.permission.POST_NOTIFICATIONS": "post_notifications",
+}
+
+ATTACHMENT_PERMISSION_MAP = {
+    "gallery_image": "photo_library",
+    "voice_note": "microphone",
+}
+
+ATTACHMENT_LABELS = {
+    "screenshot": ["screenshot", "screenShot"],
+    "extra_screenshot": ["extraScreenshot", "extraScreenShot"],
+    "gallery_image": ["galleryImage", "gallery"],
+    "voice_note": ["voiceNote"],
+    "screen_recording": ["screenRecording"],
+}
+
+PROGRAMMATIC_INVOCATION_PATTERNS = [
+    "Luciq.show(",
+    "Luciq.invoke(",
+    "BugReporting.show(",
+    "BugReporting.invoke(",
+]
+
+CUSTOM_LOG_PATTERNS = [
+    "Luciq.log(",
+    "Luciq.logVerbose(",
+    "Luciq.logInfo(",
+    "Luciq.logWarn(",
+    "Luciq.logError(",
+    "Luciq.logDebug(",
+]
+
+CUSTOM_DATA_PATTERNS = [
+    "Luciq.setCustomData",
+    "Luciq.addUserAttribute",
+    "Luciq.setUserAttribute",
+]
+
+MODULE_TOGGLE_PATTERNS = {
+    "bug_reporting_enabled": [
+        "Luciq.setBugReportingEnabled",
+        "BugReporting.enabled",
+        "BugReporting.setState",
+    ],
+    "crash_reporting_enabled": [
+        "Luciq.setCrashReportingEnabled",
+        "CrashReporting.enabled",
+        "CrashReporting.setState",
+    ],
+    "session_replay_enabled": [
+        "Luciq.setSessionReplayEnabled",
+        "SessionReplay.enabled",
+    ],
+    "surveys_enabled": [
+        "Luciq.setSurveysEnabled",
+        "Surveys.enabled",
+    ],
+    "feature_requests_enabled": [
+        "Luciq.setFeatureRequestsEnabled",
+        "FeatureRequests.enabled",
+    ],
+    "in_app_replies_enabled": [
+        "Luciq.setRepliesEnabled",
+        "Replies.enabled",
+        "Luciq.setChatsEnabled",
+    ],
+    "in_app_chat_enabled": [
+        "Luciq.setChatsEnabled",
+        "Chats.enabled",
+    ],
+    "apm_enabled": [
+        "Luciq.setAPMEnabled",
+    ],
+    "network_logs_enabled": [
+        "SessionReplay.setNetworkLogsEnabled",
+    ],
+    "user_steps_enabled": [
+        "SessionReplay.setUserStepsEnabled",
+    ],
+    "oom_monitor_enabled": [
+        "CrashReporting.oomEnabled",
+    ],
+    "anr_monitor_enabled": [
+        "CrashReporting.setAnrState",
+    ],
+}
 
 
 @dataclass
@@ -36,9 +179,13 @@ class AnalysisContext:
 def analyze_project(ctx: AnalysisContext) -> Dict[str, Any]:
     project_identity, build_systems, manual_hint = _collect_project_identity(ctx)
     luciq_sdk = _collect_luciq_sdk(ctx, build_systems, manual_hint)
-    usage_data, module_states, privacy_settings, token_analysis = _scan_luciq_usage(
-        ctx
-    )
+    (
+        usage_data,
+        module_states,
+        privacy_settings,
+        token_analysis,
+        scan_meta,
+    ) = _scan_luciq_usage(ctx)
     symbolication = _detect_symbolication(ctx.root)
     symbol_pipeline = _collect_symbol_pipeline(ctx)
     ci_hints = (
@@ -46,8 +193,29 @@ def analyze_project(ctx: AnalysisContext) -> Dict[str, Any]:
     )
     environment = _collect_environment()
     privacy = _build_privacy_disclosure(ctx)
+    feature_flag_summary = _summarize_feature_flags(
+        scan_meta["feature_flag_events"], scan_meta["clear_feature_flags_on_logout"]
+    )
+    invocation_summary = _summarize_invocations(
+        usage_data["invocation_events_detected"],
+        scan_meta["programmatic_invocations"],
+    )
+    custom_logging = _summarize_custom_logging(
+        scan_meta["custom_log_calls"], scan_meta["custom_data_calls"]
+    )
+    attachment_summary = _summarize_attachments(scan_meta["attachment_options"])
+    permissions_summary = _collect_permissions(ctx)
+    _annotate_attachment_permissions(attachment_summary, permissions_summary)
+    release_artifacts = _collect_release_artifacts(ctx)
     extra_findings = _derive_extra_findings(
-        luciq_sdk, usage_data, token_analysis, symbol_pipeline
+        luciq_sdk,
+        usage_data,
+        token_analysis,
+        symbol_pipeline,
+        module_states,
+        permissions_summary,
+        attachment_summary,
+        privacy_settings,
     )
 
     run_metadata = {
@@ -76,6 +244,12 @@ def analyze_project(ctx: AnalysisContext) -> Dict[str, Any]:
         "environment": environment,
         "privacy_disclosure": privacy,
         "extra_findings": extra_findings,
+        "feature_flag_summary": feature_flag_summary,
+        "invocation_summary": invocation_summary,
+        "custom_logging": custom_logging,
+        "attachment_summary": attachment_summary,
+        "permissions_summary": permissions_summary,
+        "release_artifacts": release_artifacts,
     }
     if ci_hints is not None:
         result["ci_hints"] = ci_hints
@@ -166,7 +340,11 @@ def _collect_luciq_sdk(
     )
     if manual_detected:
         luciq_installed = True
-        versions.add("unknown")
+        manual_version = _detect_manual_sdk_version(ctx)
+        if manual_version:
+            versions.add(manual_version)
+        else:
+            versions.add("unknown")
         sources.add("manual_detection")
 
     spm_versions = _parse_package_resolved(ctx)
@@ -204,9 +382,15 @@ def _collect_luciq_sdk(
 
 def _scan_luciq_usage(
     ctx: AnalysisContext,
-) -> Tuple[Dict[str, Any], Dict[str, Optional[bool]], Dict[str, Any], Dict[str, Any]]:
+) -> Tuple[
+    Dict[str, Any],
+    Dict[str, Optional[bool]],
+    Dict[str, Any],
+    Dict[str, Any],
+    Dict[str, Any],
+]:
     init_locations: List[Dict[str, Any]] = []
-    usage_locations: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    usage_locations: List[Dict[str, Any]] = []
     invocation_events: Set[str] = set()
     init_found = False
     network_logging_found = False
@@ -232,6 +416,11 @@ def _scan_luciq_usage(
         "ndk_module_present": None,
         "react_native_integration_detected": None,
         "flutter_integration_detected": None,
+        "surveys_enabled": None,
+        "feature_requests_enabled": None,
+        "in_app_replies_enabled": None,
+        "in_app_chat_enabled": None,
+        "oom_monitor_enabled": None,
     }
 
     privacy_settings = {
@@ -241,28 +430,113 @@ def _scan_luciq_usage(
         "network_masking_rules_found": False,
     }
 
+    feature_flag_calls: List[Dict[str, Any]] = []
+    programmatic_invocations: List[Dict[str, Any]] = []
+    custom_log_calls: List[Dict[str, Any]] = []
+    custom_data_calls: List[Dict[str, Any]] = []
+    network_mask_headers: Set[str] = set()
+    network_mask_body: Set[str] = set()
+    attachment_options: Optional[Dict[str, Optional[bool]]] = None
+    remove_all_feature_flag_calls: List[Dict[str, Any]] = []
+    clear_feature_flags_on_logout = False
+
     swift_files = ctx.plan.files_by_role.get("swift_sources", [])
     for path in swift_files:
         text = _safe_read_text(ctx, path)
         if text is None:
             continue
         lines = text.splitlines()
+        token_candidates = _extract_token_candidates(text)
+        func_pattern = re.compile(r"^\s*(?:@objc\s+)?(?:private|fileprivate|public|internal)?\s*(?:static\s+)?func\s+([A-Za-z0-9_]+)")
+        current_function = None
         for idx, line in enumerate(lines, start=1):
             rel = relative_path(path, ctx.root)
             window = "\n".join(lines[idx - 1 : idx + 2])
-            if "Luciq.start" in line:
+            snippet = _format_snippet(window)
+            func_match = func_pattern.match(line.strip())
+            if func_match:
+                current_function = func_match.group(1).lower()
+            for needle, label in FEATURE_API_PATTERNS.items():
+                if needle in line:
+                    context_block = _gather_context(lines, idx)
+                    flag_name, variant = _extract_feature_flag_details(label, context_block)
+                    event = {
+                        "file": rel,
+                        "line": idx,
+                        "operation": label,
+                        "flag_name": flag_name,
+                        "variant": variant,
+                        "code_snippet": snippet,
+                    }
+                    feature_flag_calls.append(event)
+                    if label == "remove_all_feature_flags":
+                        remove_all_feature_flag_calls.append(event)
+                        if current_function and any(
+                            token in current_function for token in ("logout", "signout")
+                        ):
+                            clear_feature_flags_on_logout = True
+                    break
+            for module_key, patterns in MODULE_TOGGLE_PATTERNS.items():
+                if any(pattern in line for pattern in patterns):
+                    inferred = _bool_from_line(line)
+                    if inferred is not None:
+                        module_states[module_key] = inferred
+                    continue
+            for invocation_pattern in PROGRAMMATIC_INVOCATION_PATTERNS:
+                if invocation_pattern in line:
+                    programmatic_invocations.append(
+                        {
+                            "file": rel,
+                            "line": idx,
+                            "call": invocation_pattern.rstrip("("),
+                            "code_snippet": snippet,
+                        }
+                    )
+                    break
+            for log_pattern in CUSTOM_LOG_PATTERNS:
+                if log_pattern in line:
+                    custom_log_calls.append(
+                        {
+                            "file": rel,
+                            "line": idx,
+                            "call": log_pattern.rstrip("("),
+                            "code_snippet": snippet,
+                        }
+                    )
+                    break
+            for data_pattern in CUSTOM_DATA_PATTERNS:
+                if data_pattern in line:
+                    custom_data_calls.append(
+                        {
+                            "file": rel,
+                            "line": idx,
+                            "call": data_pattern,
+                            "code_snippet": snippet,
+                        }
+                    )
+                    break
+            if _is_probable_code_use(line, "Luciq.start"):
                 init_found = True
                 init_locations.append(
-                    {"file": rel, "line": idx, "snippet_type": "Luciq.start"}
+                    {
+                        "file": rel,
+                        "line": idx,
+                        "snippet_type": "Luciq.start",
+                        "code_snippet": snippet,
+                    }
                 )
-                usage_locations.setdefault(
-                    (rel, "Luciq.start"),
-                    {"file": rel, "line": idx, "snippet_type": "Luciq.start"},
+                usage_locations.append(
+                    {
+                        "file": rel,
+                        "line": idx,
+                        "snippet_type": "Luciq.start",
+                        "code_snippet": snippet,
+                    }
                 )
                 invocation_events.update(
                     INVOCATION_EVENT_PATTERN.findall(window)
                 )
-                token = _extract_token_from_window(window)
+                token = _resolve_token_value(window, token_candidates)
                 if token:
                     masked = _mask_token(token)
                     tokens_detected.append(
@@ -271,81 +545,91 @@ def _scan_luciq_usage(
                     token_values.add(token)
                     if _looks_like_placeholder_token(token):
                         placeholder_token_detected = True
-            if "Luciq.setAutoMaskScreenshots" in line:
+            if _is_probable_code_use(line, "Luciq.setAutoMaskScreenshots"):
                 screenshot_masking_found = True
-                usage_locations.setdefault(
-                    (rel, "Luciq.setAutoMaskScreenshots"),
+                usage_locations.append(
                     {
                         "file": rel,
                         "line": idx,
                         "snippet_type": "Luciq.setAutoMaskScreenshots",
-                    },
+                        "code_snippet": snippet,
+                    }
                 )
-            if "Luciq.setReproStepsFor" in line:
+                privacy_settings["auto_masking_calls"].append(
+                    {
+                        "file": rel,
+                        "line": idx,
+                        "call": "Luciq.setAutoMaskScreenshots",
+                        "arguments": _extract_masking_arguments(window),
+                        "code_snippet": snippet,
+                    }
+                )
+            if _is_probable_code_use(line, "Luciq.setReproStepsFor"):
                 repro_steps_found = True
-                usage_locations.setdefault(
-                    (rel, "Luciq.setReproStepsFor"),
+                usage_locations.append(
                     {
                         "file": rel,
                         "line": idx,
                         "snippet_type": "Luciq.setReproStepsFor",
-                    },
+                        "code_snippet": snippet,
+                    }
                 )
-            if "Luciq.identifyUser" in line:
+            if _is_probable_code_use(line, "Luciq.identifyUser"):
                 identify_hooks_found = True
-                usage_locations.setdefault(
-                    (rel, "Luciq.identifyUser"),
+                usage_locations.append(
                     {
                         "file": rel,
                         "line": idx,
                         "snippet_type": "Luciq.identifyUser",
-                    },
+                        "code_snippet": snippet,
+                    }
                 )
-            if "Luciq.logOut" in line:
+            if _is_probable_code_use(line, "Luciq.logOut"):
                 logout_hooks_found = True
-                usage_locations.setdefault(
-                    (rel, "Luciq.logOut"),
+                usage_locations.append(
                     {
                         "file": rel,
                         "line": idx,
                         "snippet_type": "Luciq.logOut",
-                    },
+                        "code_snippet": snippet,
+                    }
                 )
-            if "NetworkLogger" in line:
+            if _is_probable_code_use(line, "NetworkLogger"):
                 network_logging_found = True
-                usage_locations.setdefault(
-                    (rel, "NetworkLogger"),
+                usage_locations.append(
                     {
                         "file": rel,
                         "line": idx,
                         "snippet_type": "NetworkLogger",
-                    },
+                        "code_snippet": snippet,
+                    }
                 )
-            if "NetworkLogger.setRequestObfuscationHandler" in line:
+            if _is_probable_code_use(line, "NetworkLogger.setRequestObfuscationHandler"):
                 network_masking_found = True
                 privacy_settings["network_masking_rules_found"] = True
-            if "BugReporting.setState" in line:
-                module_states["bug_reporting_enabled"] = _bool_from_line(line)
-            if "CrashReporting.setState" in line:
-                module_states["crash_reporting_enabled"] = _bool_from_line(line)
-            if "CrashReporting.setAnrState" in line:
-                module_states["anr_monitor_enabled"] = _bool_from_line(line)
-            if "SessionReplay.setEnabled" in line:
-                module_states["session_replay_enabled"] = _bool_from_line(line)
-            if "SessionReplay.setNetworkLogsEnabled" in line:
-                module_states["network_logs_enabled"] = _bool_from_line(line)
-            if "SessionReplay.setUserStepsEnabled" in line:
-                module_states["user_steps_enabled"] = _bool_from_line(line)
-            if "Luciq.disable" in line:
+                context_block = _gather_context(lines, idx, after=25)
+                headers_found, body_found = _extract_masking_terms(context_block)
+                network_mask_headers.update(headers_found)
+                network_mask_body.update(body_found)
+            if "setAttachmentTypesEnabled" in line:
+                context_block = _gather_context(lines, idx, after=20)
+                attachment_options = _extract_attachment_options(context_block)
+            if _is_probable_code_use(line, "Luciq.disable"):
                 module_states["sdk_globally_disabled"] = True
-            if "Luciq.enable" in line and module_states["sdk_globally_disabled"] is None:
+            if _is_probable_code_use(line, "Luciq.enable") and module_states["sdk_globally_disabled"] is None:
                 module_states["sdk_globally_disabled"] = False
-            if "Luciq.setDebugEnabled" in line:
+            if _is_probable_code_use(line, "Luciq.setDebugEnabled"):
                 module_states["debug_logs_enabled"] = _bool_from_line(line)
-            if "Luciq.setAPMEnabled" in line:
-                module_states["apm_enabled"] = _bool_from_line(line)
-            if "Luciq.setAutoMaskingLevel" in line:
-                privacy_settings["auto_masking_calls"].append("setAutoMaskingLevel")
+            if _is_probable_code_use(line, "Luciq.setAutoMaskingLevel"):
+                privacy_settings["auto_masking_calls"].append(
+                    {
+                        "file": rel,
+                        "line": idx,
+                        "call": "Luciq.setAutoMaskingLevel",
+                        "arguments": _extract_masking_arguments(window),
+                        "code_snippet": snippet,
+                    }
+                )
             if ".luciqPrivate" in line or "Luciq.setPrivateView" in line:
                 privacy_settings["private_view_calls_found"] = True
             if ".luciqPrivate" in line:
@@ -358,9 +642,30 @@ def _scan_luciq_usage(
     if _gradle_has_ndk_dependency(ctx):
         module_states["ndk_module_present"] = True
 
+    if init_found:
+        for key in MODULE_DEFAULT_TRUE:
+            if module_states.get(key) is None:
+                module_states[key] = True
+        for key in MODULE_DEFAULT_FALSE:
+            if module_states.get(key) is None:
+                module_states[key] = False
+
+    masked_header_terms = sorted(dict.fromkeys(network_mask_headers))
+    masked_body_terms = sorted(dict.fromkeys(network_mask_body))
+    privacy_settings["masked_header_terms"] = masked_header_terms
+    privacy_settings["masked_body_terms"] = masked_body_terms
+    privacy_settings["missing_header_terms"] = [
+        header
+        for header in NETWORK_SENSITIVE_HEADERS
+        if header not in network_mask_headers
+    ]
+    privacy_settings["missing_body_terms"] = [
+        field for field in NETWORK_SENSITIVE_BODY_FIELDS if field not in network_mask_body
+    ]
+
     usage_locations_list = sorted(
-        usage_locations.values(),
-        key=lambda entry: (entry["file"], entry["line"]),
+        usage_locations,
+        key=lambda entry: (entry["file"], entry["line"], entry["snippet_type"]),
     )
     usage = {
         "init_found": init_found,
@@ -373,13 +678,22 @@ def _scan_luciq_usage(
         "identify_hooks_found": identify_hooks_found,
         "logout_hooks_found": logout_hooks_found,
         "usage_locations": usage_locations_list,
+        "feature_flag_calls": feature_flag_calls,
     }
     token_info = {
         "tokens_detected": tokens_detected,
         "multiple_tokens_detected": len(token_values) > 1,
         "placeholder_token_detected": placeholder_token_detected,
     }
-    return usage, module_states, privacy_settings, token_info
+    scan_meta = {
+        "programmatic_invocations": programmatic_invocations,
+        "custom_log_calls": custom_log_calls,
+        "custom_data_calls": custom_data_calls,
+        "attachment_options": attachment_options,
+        "feature_flag_events": feature_flag_calls,
+        "clear_feature_flags_on_logout": clear_feature_flags_on_logout,
+    }
+    return usage, module_states, privacy_settings, token_info, scan_meta
 
 
 def _detect_symbolication(root: Path) -> Dict[str, Any]:
@@ -486,6 +800,10 @@ def _derive_extra_findings(
     luciq_usage: Dict[str, Any],
     token_info: Dict[str, Any],
     symbol_pipeline: Dict[str, Any],
+    module_states: Dict[str, Optional[bool]],
+    permissions_summary: Dict[str, Any],
+    attachment_summary: Dict[str, Any],
+    privacy_settings: Dict[str, Any],
 ) -> List[Dict[str, str]]:
     findings: List[Dict[str, str]] = []
     if luciq_sdk["luciq_installed"] and not luciq_usage["init_found"]:
@@ -554,6 +872,42 @@ def _derive_extra_findings(
                 "rationale": "No Luciq/Instabug dSYM upload script was detected in the Xcode project.",
             }
         )
+    missing_headers = privacy_settings.get("missing_header_terms", [])
+    if missing_headers and luciq_usage["network_masking_found"]:
+        findings.append(
+            {
+                "label": "network_masking_incomplete",
+                "value": ", ".join(missing_headers),
+                "rationale": "Network obfuscation handler detected but some sensitive headers are not masked.",
+            }
+        )
+    missing_attachment_perms = attachment_summary.get("required_permissions_missing", [])
+    if missing_attachment_perms:
+        findings.append(
+            {
+                "label": "attachment_permissions_missing",
+                "value": ", ".join(missing_attachment_perms),
+                "rationale": "Attachment types are enabled but required Info.plist usage descriptions are missing.",
+            }
+        )
+    for key, label in [
+        ("bug_reporting_enabled", "bug_reporting_disabled"),
+        ("crash_reporting_enabled", "crash_reporting_disabled"),
+        ("session_replay_enabled", "session_replay_disabled"),
+        ("surveys_enabled", "surveys_disabled"),
+        ("feature_requests_enabled", "feature_requests_disabled"),
+        ("in_app_replies_enabled", "in_app_replies_disabled"),
+        ("in_app_chat_enabled", "in_app_chat_disabled"),
+        ("oom_monitor_enabled", "oom_monitor_disabled"),
+    ]:
+        if module_states.get(key) is False:
+            findings.append(
+                {
+                    "label": label,
+                    "value": "disabled",
+                    "rationale": f"{key.replace('_', ' ').title()} is explicitly disabled in code.",
+                }
+            )
     return findings
 
 
@@ -656,14 +1010,97 @@ def _detect_manual_embed(
     return False
 
 
-TOKEN_REGEX = re.compile(r'withToken:\s*"([^"]+)"')
+def _detect_manual_sdk_version(ctx: AnalysisContext) -> Optional[str]:
+    search_roots = list(ctx.root.rglob("LuciqSDK.xcframework"))
+    for framework_root in search_roots:
+        if "DerivedData" in framework_root.parts or ".git" in framework_root.parts:
+            continue
+        for platform in [
+            "ios-arm64",
+            "ios-arm64_x86_64-simulator",
+            "tvos-arm64",
+            "tvos-arm64_x86_64-simulator",
+        ]:
+            info_path = (
+                framework_root
+                / platform
+                / "LuciqSDK.framework"
+                / "Info.plist"
+            )
+            if info_path.exists():
+                data = _read_plist(ctx, info_path)
+                if not data:
+                    continue
+                version = data.get("CFBundleShortVersionString") or data.get(
+                    "CFBundleVersion"
+                )
+                if version:
+                    return version
+    return None
 
 
-def _extract_token_from_window(window: str) -> Optional[str]:
-    match = TOKEN_REGEX.search(window)
+TOKEN_LITERAL_PATTERN = re.compile(r'withToken:\s*"([^"]+)"')
+TOKEN_IDENTIFIER_PATTERN = re.compile(
+    r"withToken:\s*([A-Za-z_][A-Za-z0-9_]*)", re.MULTILINE
+)
+TOKEN_DECL_PATTERN = re.compile(
+    r"(?:static\s+)?(?:private\s+|fileprivate\s+|public\s+|internal\s+)?(?:let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*String)?\s*=\s*\"([^\"]+)\""
+)
+
+
+def _extract_token_candidates(text: str) -> Dict[str, str]:
+    tokens: Dict[str, str] = {}
+    for match in TOKEN_DECL_PATTERN.finditer(text):
+        name, value = match.groups()
+        tokens[name] = value
+    return tokens
+
+
+def _resolve_token_value(window: str, token_map: Dict[str, str]) -> Optional[str]:
+    literal = _extract_token_literal(window)
+    if literal:
+        return literal
+    condensed = window.replace("\n", " ")
+    identifier_match = TOKEN_IDENTIFIER_PATTERN.search(condensed)
+    if identifier_match:
+        identifier = identifier_match.group(1)
+        return token_map.get(identifier)
+    return None
+
+
+def _extract_token_literal(window: str) -> Optional[str]:
+    match = TOKEN_LITERAL_PATTERN.search(window)
     if match:
         return match.group(1).strip()
     return None
+
+
+def _extract_masking_arguments(window: str) -> str:
+    normalized = window.replace("\n", " ")
+    match = re.search(
+        r"setAutoMask(?:Screenshots|ingLevel)\s*\((.*?)\)", normalized
+    )
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _format_snippet(window: str) -> str:
+    snippet = window.strip("\n")
+    return snippet if len(snippet) <= 500 else snippet[:497] + "..."
+
+
+def _is_probable_code_use(line: str, symbol: str) -> bool:
+    pos = line.find(symbol)
+    if pos == -1:
+        return False
+    stripped = line.strip()
+    if stripped.startswith("//"):
+        return False
+    preceding = line[:pos]
+    if preceding.count('"') % 2 == 1 or preceding.count("'") % 2 == 1:
+        return False
+    return True
 
 
 def _mask_token(token: str) -> str:
@@ -862,6 +1299,202 @@ def _collect_sourcemap_paths(ctx: AnalysisContext) -> List[str]:
         if ".map" in text or ".jsbundle" in text:
             paths.add(relative_path(path, ctx.root))
     return sorted(dict.fromkeys(paths))
+
+
+def _summarize_feature_flags(
+    events: List[Dict[str, Any]], clear_on_logout: bool
+) -> Dict[str, Any]:
+    flags = sorted(
+        {
+            event["flag_name"]
+            for event in events
+            if event.get("flag_name")
+        }
+    )
+    breakdown = Counter(event["operation"] for event in events)
+    return {
+        "events_detected": len(events),
+        "flags_tracked": flags,
+        "operation_breakdown": dict(breakdown),
+        "clear_on_logout_detected": clear_on_logout,
+    }
+
+
+def _summarize_invocations(
+    gesture_events: List[str], programmatic_invocations: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    issues: List[str] = []
+    if not gesture_events and not programmatic_invocations:
+        issues.append("No gesture or programmatic Luciq invocation detected.")
+    return {
+        "gesture_events": gesture_events,
+        "programmatic_invocations": programmatic_invocations,
+        "issues": issues,
+    }
+
+
+def _summarize_custom_logging(
+    log_calls: List[Dict[str, Any]], data_calls: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    return {
+        "log_calls": log_calls,
+        "custom_data_calls": data_calls,
+    }
+
+
+def _summarize_attachments(
+    attachment_options: Optional[Dict[str, Optional[bool]]]
+) -> Dict[str, Any]:
+    return {
+        "attachment_api_detected": bool(attachment_options),
+        "options": attachment_options or {},
+        "required_permissions_missing": [],
+    }
+
+
+def _collect_permissions(ctx: AnalysisContext) -> Dict[str, Any]:
+    ios_keys_found: Set[str] = set()
+    for info_plist in ctx.plan.files_by_role.get("info_plists", []):
+        data = _read_plist(ctx, info_plist)
+        if not data:
+            continue
+        for key in IOS_USAGE_DESCRIPTION_KEYS:
+            if key in data:
+                ios_keys_found.add(key)
+    android_permissions: Set[str] = set()
+    for manifest in ctx.plan.files_by_role.get("android_manifests", []):
+        text = _safe_read_text(ctx, manifest)
+        if not text:
+            continue
+        for permission in ANDROID_PERMISSION_KEYS:
+            if permission in text:
+                android_permissions.add(permission)
+    ios_summary = {
+        friendly: (key in ios_keys_found)
+        for key, friendly in IOS_USAGE_DESCRIPTION_KEYS.items()
+    }
+    android_summary = {
+        friendly: (permission in android_permissions)
+        for permission, friendly in ANDROID_PERMISSION_KEYS.items()
+    }
+    return {
+        "ios_usage_descriptions": ios_summary,
+        "android_permissions": android_summary,
+    }
+
+
+def _annotate_attachment_permissions(
+    attachment_summary: Dict[str, Any], permissions_summary: Dict[str, Any]
+) -> None:
+    missing: List[str] = []
+    ios_perms = permissions_summary.get("ios_usage_descriptions", {})
+    for option_key, permission_key in ATTACHMENT_PERMISSION_MAP.items():
+        option_value = attachment_summary["options"].get(option_key)
+        if option_value and not ios_perms.get(permission_key, False):
+            missing.append(permission_key)
+    attachment_summary["required_permissions_missing"] = sorted(dict.fromkeys(missing))
+
+
+def _collect_release_artifacts(ctx: AnalysisContext) -> Dict[str, Any]:
+    ignored_dirs = {"DerivedData", ".git", "build", "Pods", "node_modules"}
+    app_store_keys: List[str] = []
+    play_service_accounts: List[str] = []
+    team_configs: List[str] = []
+
+    for path in ctx.root.rglob("*.p8"):
+        if any(part in ignored_dirs for part in path.parts):
+            continue
+        if path.is_file():
+            app_store_keys.append(relative_path(path, ctx.root))
+
+    for pattern in ("*service*.json", "*play*.json", "*google*.json"):
+        for path in ctx.root.rglob(pattern):
+            if any(part in ignored_dirs for part in path.parts):
+                continue
+            if path.is_file():
+                play_service_accounts.append(relative_path(path, ctx.root))
+
+    for pattern in ("*team*.yml", "*team*.yaml", "*team*.json"):
+        for path in ctx.root.rglob(pattern):
+            if any(part in ignored_dirs for part in path.parts):
+                continue
+            if path.is_file() and "luciq" in path.name.lower():
+                team_configs.append(relative_path(path, ctx.root))
+
+    return {
+        "app_store_keys_detected": sorted(dict.fromkeys(app_store_keys)),
+        "play_service_accounts_detected": sorted(dict.fromkeys(play_service_accounts)),
+        "team_config_files": sorted(dict.fromkeys(team_configs)),
+    }
+
+
+def _extract_masking_terms(context_block: str) -> Tuple[Set[str], Set[str]]:
+    headers_found: Set[str] = set()
+    body_found: Set[str] = set()
+    lower_block = context_block.lower()
+    for header in NETWORK_SENSITIVE_HEADERS:
+        if header.lower() in lower_block:
+            headers_found.add(header)
+    for field in NETWORK_SENSITIVE_BODY_FIELDS:
+        if field.lower() in lower_block:
+            body_found.add(field)
+    return headers_found, body_found
+
+
+def _extract_attachment_options(context_block: str) -> Dict[str, Optional[bool]]:
+    options: Dict[str, Optional[bool]] = {
+        "screenshot": None,
+        "extra_screenshot": None,
+        "gallery_image": None,
+        "voice_note": None,
+        "screen_recording": None,
+    }
+    for logical_name, labels in ATTACHMENT_LABELS.items():
+        for label in labels:
+            match = re.search(
+                rf"{label}\s*:\s*(true|false)", context_block, flags=re.IGNORECASE
+            )
+            if match:
+                options[logical_name] = match.group(1).lower() == "true"
+                break
+    call_match = re.search(
+        r"setAttachmentTypesEnabled\s*\(\s*(true|false)", context_block, re.IGNORECASE
+    )
+    if call_match and options["screenshot"] is None:
+        options["screenshot"] = call_match.group(1).lower() == "true"
+    return options
+
+
+def _extract_feature_flag_details(
+    operation: str, context_block: str
+) -> Tuple[Optional[str], Optional[str]]:
+    name = None
+    variant = None
+    if operation in ("add_feature_flag", "add_feature_flags"):
+        name_match = re.search(
+            r"addFeatureFlags?\s*\(\s*\"([^\"]+)\"", context_block
+        )
+        if name_match:
+            name = name_match.group(1)
+        variant_match = re.search(r"variant\s*:\s*\"([^\"]+)\"", context_block)
+        if variant_match:
+            variant = variant_match.group(1)
+    elif operation in ("remove_feature_flag", "remove_feature_flags"):
+        name_match = re.search(
+            r"removeFeatureFlags?\s*\(\s*\"([^\"]+)\"", context_block
+        )
+        if name_match:
+            name = name_match.group(1)
+    return name, variant
+
+
+def _gather_context(
+    lines: List[str], idx: int, before: int = 3, after: int = 20
+) -> str:
+    zero_based = idx - 1
+    start = max(0, zero_based - before)
+    end = min(len(lines), zero_based + after)
+    return "\n".join(lines[start:end])
 
 
 def _generate_uuid() -> str:

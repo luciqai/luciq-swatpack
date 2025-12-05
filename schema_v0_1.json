@@ -14,7 +14,13 @@
     "symbol_pipeline",
     "environment",
     "privacy_disclosure",
-    "extra_findings"
+    "extra_findings",
+    "feature_flag_summary",
+    "invocation_summary",
+    "custom_logging",
+    "attachment_summary",
+    "permissions_summary",
+    "release_artifacts"
   ],
   "properties": {
     "run_metadata": {
@@ -63,7 +69,12 @@
         "debug_logs_enabled": {"type": ["boolean", "null"]},
         "ndk_module_present": {"type": ["boolean", "null"]},
         "react_native_integration_detected": {"type": ["boolean", "null"]},
-        "flutter_integration_detected": {"type": ["boolean", "null"]}
+        "flutter_integration_detected": {"type": ["boolean", "null"]},
+        "surveys_enabled": {"type": ["boolean", "null"]},
+        "feature_requests_enabled": {"type": ["boolean", "null"]},
+        "in_app_replies_enabled": {"type": ["boolean", "null"]},
+        "in_app_chat_enabled": {"type": ["boolean", "null"]},
+        "oom_monitor_enabled": {"type": ["boolean", "null"]}
       },
       "additionalProperties": false
     },
@@ -72,17 +83,47 @@
       "properties": {
         "auto_masking_calls": {
           "type": "array",
-          "items": {"type": "string"}
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "call"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "call": {"type": "string"},
+              "arguments": {"type": "string"},
+              "code_snippet": {"type": "string"}
+            }
+          }
         },
         "private_view_calls_found": {"type": "boolean"},
         "compose_private_modifiers_found": {"type": "boolean"},
-        "network_masking_rules_found": {"type": "boolean"}
+        "network_masking_rules_found": {"type": "boolean"},
+        "masked_header_terms": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "masked_body_terms": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "missing_header_terms": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "missing_body_terms": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
       },
       "required": [
         "auto_masking_calls",
         "private_view_calls_found",
         "compose_private_modifiers_found",
-        "network_masking_rules_found"
+        "network_masking_rules_found",
+        "masked_header_terms",
+        "masked_body_terms",
+        "missing_header_terms",
+        "missing_body_terms"
       ],
       "additionalProperties": false
     },
@@ -215,6 +256,21 @@
               "file": {"type": "string"},
               "line": {"type": "integer"},
               "snippet_type": {"type": "string"}
+            }
+          }
+        },
+        "feature_flag_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "operation"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "operation": {"type": "string"},
+              "flag_name": {"type": ["string", "null"]},
+              "variant": {"type": ["string", "null"]},
+              "code_snippet": {"type": "string"}
             }
           }
         }
@@ -373,6 +429,141 @@
           "label": {"type": "string"},
           "value": {"type": "string"},
           "rationale": {"type": "string"}
+        }
+      }
+    },
+    "feature_flag_summary": {
+      "type": "object",
+      "required": [
+        "events_detected",
+        "flags_tracked",
+        "operation_breakdown",
+        "clear_on_logout_detected"
+      ],
+      "properties": {
+        "events_detected": {"type": "integer"},
+        "flags_tracked": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "operation_breakdown": {
+          "type": "object",
+          "additionalProperties": {"type": "integer"}
+        },
+        "clear_on_logout_detected": {"type": "boolean"}
+      }
+    },
+    "invocation_summary": {
+      "type": "object",
+      "required": ["gesture_events", "programmatic_invocations", "issues"],
+      "properties": {
+        "gesture_events": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "programmatic_invocations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "call"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "call": {"type": "string"},
+              "code_snippet": {"type": "string"}
+            }
+          }
+        },
+        "issues": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "custom_logging": {
+      "type": "object",
+      "required": ["log_calls", "custom_data_calls"],
+      "properties": {
+        "log_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "call"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "call": {"type": "string"},
+              "code_snippet": {"type": "string"}
+            }
+          }
+        },
+        "custom_data_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "call"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "call": {"type": "string"},
+              "code_snippet": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "attachment_summary": {
+      "type": "object",
+      "required": [
+        "attachment_api_detected",
+        "options",
+        "required_permissions_missing"
+      ],
+      "properties": {
+        "attachment_api_detected": {"type": "boolean"},
+        "options": {
+          "type": "object",
+          "additionalProperties": {"type": ["boolean", "null"]}
+        },
+        "required_permissions_missing": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "permissions_summary": {
+      "type": "object",
+      "required": ["ios_usage_descriptions", "android_permissions"],
+      "properties": {
+        "ios_usage_descriptions": {
+          "type": "object",
+          "additionalProperties": {"type": "boolean"}
+        },
+        "android_permissions": {
+          "type": "object",
+          "additionalProperties": {"type": "boolean"}
+        }
+      }
+    },
+    "release_artifacts": {
+      "type": "object",
+      "required": [
+        "app_store_keys_detected",
+        "play_service_accounts_detected",
+        "team_config_files"
+      ],
+      "properties": {
+        "app_store_keys_detected": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "play_service_accounts_detected": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "team_config_files": {
+          "type": "array",
+          "items": {"type": "string"}
         }
       }
     }

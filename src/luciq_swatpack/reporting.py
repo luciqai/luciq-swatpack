@@ -95,6 +95,60 @@ def write_markdown_report(
     lines.append(f"- logout hooks: {usage['logout_hooks_found']}")
     lines.append("")
 
+    if usage["usage_locations"]:
+        lines.append("### Luciq API Calls")
+        for call in usage["usage_locations"]:
+            lines.append(
+                f"- `{call['snippet_type']}` at {call['file']}:{call['line']}"
+            )
+            snippet = call.get("code_snippet")
+            if snippet:
+                lines.extend(_format_snippet_block(snippet, indent="  "))
+        lines.append("")
+    if usage.get("feature_flag_calls"):
+        lines.append("### Feature Flag / Remote Config Calls")
+        for call in usage["feature_flag_calls"]:
+            lines.append(f"- `{call['operation']}` at {call['file']}:{call['line']}")
+            if call.get("flag_name"):
+                variant = call.get("variant") or "n/a"
+                lines.append(
+                    f"  flag `{call['flag_name']}` variant `{variant}`"
+                )
+            snippet = call.get("code_snippet")
+            if snippet:
+                lines.extend(_format_snippet_block(snippet, indent="  "))
+        lines.append("")
+    feature_flag_summary = snapshot["feature_flag_summary"]
+    lines.append("### Feature Flag Summary")
+    lines.append(f"- Events detected: {feature_flag_summary['events_detected']}")
+    tracked = ", ".join(feature_flag_summary["flags_tracked"]) or "none"
+    lines.append(f"- Flags tracked: {tracked}")
+    op_breakdown = feature_flag_summary["operation_breakdown"]
+    if op_breakdown:
+        lines.append("- Operation breakdown:")
+        for op, count in op_breakdown.items():
+            lines.append(f"  - {op}: {count}")
+    lines.append(
+        f"- Flags cleared on logout: {feature_flag_summary['clear_on_logout_detected']}"
+    )
+    lines.append("")
+    invocation_summary = snapshot["invocation_summary"]
+    lines.append("### Invocation Summary")
+    lines.append(
+        f"- Gesture events: {', '.join(invocation_summary['gesture_events']) or 'none'}"
+    )
+    if invocation_summary["programmatic_invocations"]:
+        lines.append("- Programmatic invocations:")
+        for call in invocation_summary["programmatic_invocations"]:
+            lines.append(f"  - `{call['call']}` at {call['file']}:{call['line']}")
+    else:
+        lines.append("- Programmatic invocations: none")
+    if invocation_summary["issues"]:
+        lines.append("- Issues:")
+        for issue in invocation_summary["issues"]:
+            lines.append(f"  - {issue}")
+    lines.append("")
+
     module_states = snapshot["module_states"]
     lines.append("## Module States")
     for key, value in module_states.items():
@@ -106,9 +160,19 @@ def write_markdown_report(
     privacy_settings = snapshot["privacy_settings"]
     lines.append("## Privacy & Masking")
     auto_calls = privacy_settings["auto_masking_calls"]
-    lines.append(
-        f"- Auto-masking calls: {', '.join(auto_calls) if auto_calls else 'none'}"
-    )
+    if auto_calls:
+        lines.append("- Auto-masking calls:")
+        for call in auto_calls:
+            label = call.get("call", "Luciq.setAutoMaskScreenshots")
+            args = call.get("arguments", "")
+            lines.append(
+                f"  - `{label}` at {call['file']}:{call['line']} (args: {args or 'n/a'})"
+            )
+            snippet = call.get("code_snippet")
+            if snippet:
+                lines.extend(_format_snippet_block(snippet, indent="    "))
+    else:
+        lines.append("- Auto-masking calls: none")
     lines.append(
         f"- Private view tags found: {privacy_settings['private_view_calls_found']}"
     )
@@ -118,6 +182,51 @@ def write_markdown_report(
     lines.append(
         f"- Network masking rules: {privacy_settings['network_masking_rules_found']}"
     )
+    masked_headers = ", ".join(privacy_settings.get("masked_header_terms", [])) or "none"
+    lines.append(f"- Masked header terms: {masked_headers}")
+    masked_body = ", ".join(privacy_settings.get("masked_body_terms", [])) or "none"
+    lines.append(f"- Masked body fields: {masked_body}")
+    missing_headers = ", ".join(privacy_settings.get("missing_header_terms", [])) or "none"
+    lines.append(f"- Missing header masks: {missing_headers}")
+    missing_body = ", ".join(privacy_settings.get("missing_body_terms", [])) or "none"
+    lines.append(f"- Missing body masks: {missing_body}")
+    lines.append("")
+    custom_logging = snapshot["custom_logging"]
+    lines.append("## Custom Logging")
+    if custom_logging["log_calls"]:
+        lines.append("- Log calls:")
+        for call in custom_logging["log_calls"]:
+            lines.append(f"  - `{call['call']}` at {call['file']}:{call['line']}")
+    else:
+        lines.append("- Log calls: none")
+    if custom_logging["custom_data_calls"]:
+        lines.append("- Custom data calls:")
+        for call in custom_logging["custom_data_calls"]:
+            lines.append(f"  - `{call['call']}` at {call['file']}:{call['line']}")
+    else:
+        lines.append("- Custom data calls: none")
+    lines.append("")
+
+    attachment_summary = snapshot["attachment_summary"]
+    permissions_summary = snapshot["permissions_summary"]
+    lines.append("## Attachments & Permissions")
+    lines.append(
+        f"- Attachment API detected: {attachment_summary['attachment_api_detected']}"
+    )
+    if attachment_summary["options"]:
+        lines.append("- Attachment options:")
+        for key, value in attachment_summary["options"].items():
+            lines.append(f"  - {key}: {value}")
+    ios_perms = permissions_summary["ios_usage_descriptions"]
+    lines.append("- iOS usage descriptions:")
+    for key, value in ios_perms.items():
+        lines.append(f"  - {key}: {value}")
+    android_perms = permissions_summary["android_permissions"]
+    lines.append("- Android permissions:")
+    for key, value in android_perms.items():
+        lines.append(f"  - {key}: {value}")
+    missing_perms = ", ".join(attachment_summary["required_permissions_missing"]) or "none"
+    lines.append(f"- Missing attachment permissions: {missing_perms}")
     lines.append("")
 
     token_info = snapshot["token_analysis"]
@@ -237,6 +346,27 @@ def write_markdown_report(
         for issue in rn_info["issues"]:
             lines.append(f"    - {issue}")
     lines.append("")
+    release_artifacts = snapshot["release_artifacts"]
+    lines.append("## Release Artifacts")
+    if release_artifacts["app_store_keys_detected"]:
+        lines.append("- App Store Connect keys:")
+        for path in release_artifacts["app_store_keys_detected"]:
+            lines.append(f"  - {path}")
+    else:
+        lines.append("- App Store Connect keys: none")
+    if release_artifacts["play_service_accounts_detected"]:
+        lines.append("- Play service accounts:")
+        for path in release_artifacts["play_service_accounts_detected"]:
+            lines.append(f"  - {path}")
+    else:
+        lines.append("- Play service accounts: none")
+    if release_artifacts["team_config_files"]:
+        lines.append("- Team ownership configs:")
+        for path in release_artifacts["team_config_files"]:
+            lines.append(f"  - {path}")
+    else:
+        lines.append("- Team ownership configs: none")
+    lines.append("")
 
     privacy = snapshot["privacy_disclosure"]
     lines.append("## Privacy Disclosure")
@@ -290,4 +420,12 @@ def _build_recommendations(snapshot: Dict[str, Any]) -> List[str]:
     ):
         recs.append("Carthage project detected but `carthage version` not available on this host.")
     return recs
+
+
+def _format_snippet_block(snippet: str, indent: str = "") -> List[str]:
+    snippet_lines = snippet.splitlines() or [snippet]
+    block = [f"{indent}```swift"]
+    block.extend(f"{indent}{line}" for line in snippet_lines)
+    block.append(f"{indent}```")
+    return block
 

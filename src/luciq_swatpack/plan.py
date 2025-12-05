@@ -95,6 +95,11 @@ def build_capture_plan(
         root,
         allowlist_patterns,
     )
+    files_by_role["android_manifests"] = _filter_with_allowlist(
+        _collect_sorted(list(iter_matching_files(root, ["AndroidManifest.xml"]))),
+        root,
+        allowlist_patterns,
+    )
     gradle_targets = [
         "build.gradle",
         "build.gradle.kts",
