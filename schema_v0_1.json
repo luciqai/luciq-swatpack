@@ -74,7 +74,22 @@
         "feature_requests_enabled": {"type": ["boolean", "null"]},
         "in_app_replies_enabled": {"type": ["boolean", "null"]},
         "in_app_chat_enabled": {"type": ["boolean", "null"]},
-        "oom_monitor_enabled": {"type": ["boolean", "null"]}
+        "oom_monitor_enabled": {"type": ["boolean", "null"]},
+        "force_restart_enabled": {"type": ["boolean", "null"]},
+        "network_auto_masking_enabled": {"type": ["boolean", "null"]},
+        "ndk_crashes_enabled": {"type": ["boolean", "null"]},
+        "luciq_logs_enabled": {"type": ["boolean", "null"]},
+        "apm_cold_launch_enabled": {"type": ["boolean", "null"]},
+        "apm_hot_launch_enabled": {"type": ["boolean", "null"]},
+        "apm_warm_launch_enabled": {"type": ["boolean", "null"]},
+        "apm_auto_ui_trace_enabled": {"type": ["boolean", "null"]},
+        "apm_ui_hang_enabled": {"type": ["boolean", "null"]},
+        "apm_screen_loading_enabled": {"type": ["boolean", "null"]},
+        "apm_fragment_spans_enabled": {"type": ["boolean", "null"]},
+        "apm_compose_spans_enabled": {"type": ["boolean", "null"]},
+        "apm_webview_tracking_enabled": {"type": ["boolean", "null"]},
+        "view_hierarchy_enabled": {"type": ["boolean", "null"]},
+        "user_identification_enabled": {"type": ["boolean", "null"]}
       },
       "additionalProperties": false
     },
@@ -185,6 +200,19 @@
         "swift_versions_detected": {
           "type": "array",
           "items": {"type": "string"}
+        },
+        "android_app_id": {"type": ["string", "null"]},
+        "android_min_sdk_detected": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "android_target_sdk_detected": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "gradle_paths": {
+          "type": "array",
+          "items": {"type": "string"}
         }
       }
     },
@@ -273,7 +301,73 @@
               "code_snippet": {"type": "string"}
             }
           }
-        }
+        },
+        "apm_usage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "call"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "call": {"type": "string"},
+              "code_snippet": {"type": "string"}
+            }
+          }
+        },
+        "non_fatal_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "call"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "call": {"type": "string"},
+              "code_snippet": {"type": "string"}
+            }
+          }
+        },
+        "user_consent_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "call"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "call": {"type": "string"},
+              "code_snippet": {"type": "string"}
+            }
+          }
+        },
+        "welcome_message_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "call"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "call": {"type": "string"},
+              "code_snippet": {"type": "string"}
+            }
+          }
+        },
+        "webview_tracking_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["file", "line", "call"],
+            "properties": {
+              "file": {"type": "string"},
+              "line": {"type": "integer"},
+              "call": {"type": "string"},
+              "code_snippet": {"type": "string"}
+            }
+          }
+        },
+        "webview_masking_found": {"type": "boolean"}
       }
     },
     "symbolication": {

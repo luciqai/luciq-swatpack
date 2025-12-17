@@ -95,6 +95,18 @@ def build_capture_plan(
         root,
         allowlist_patterns,
     )
+    # Kotlin source files for Android scanning
+    files_by_role["kotlin_sources"] = _filter_with_allowlist(
+        _collect_sorted([path for path in iter_files(root, ".kt")]),
+        root,
+        allowlist_patterns,
+    )
+    # Java source files for Android scanning
+    files_by_role["java_sources"] = _filter_with_allowlist(
+        _collect_sorted([path for path in iter_files(root, ".java")]),
+        root,
+        allowlist_patterns,
+    )
     files_by_role["android_manifests"] = _filter_with_allowlist(
         _collect_sorted(list(iter_matching_files(root, ["AndroidManifest.xml"]))),
         root,
@@ -125,7 +137,12 @@ def build_capture_plan(
         root,
         allowlist_patterns,
     )
-    shell_targets = ["upload_symbols.sh", "upload_dsym.sh", "instabug.sh"]
+    # dSYM upload shell scripts - both legacy Instabug and new Luciq naming
+    shell_targets = [
+        "upload_symbols.sh", "upload_dsym.sh",
+        "instabug.sh", "Luciq_dsym_upload.sh",
+        "luciq_dsym_upload.sh",  # lowercase variant
+    ]
     files_by_role["shell_scripts"] = _filter_with_allowlist(
         _collect_sorted(list(iter_matching_files(root, shell_targets))),
         root,
@@ -133,6 +150,21 @@ def build_capture_plan(
     )
     files_by_role["pubspec"] = _filter_with_allowlist(
         _collect_sorted(list(iter_matching_files(root, ["pubspec.yaml"]))),
+        root,
+        allowlist_patterns,
+    )
+    # JavaScript/TypeScript source files for React Native scanning
+    js_sources = []
+    for ext in [".js", ".jsx", ".ts", ".tsx"]:
+        js_sources.extend(iter_files(root, ext))
+    files_by_role["js_sources"] = _filter_with_allowlist(
+        _collect_sorted(js_sources),
+        root,
+        allowlist_patterns,
+    )
+    # Dart source files for Flutter scanning
+    files_by_role["dart_sources"] = _filter_with_allowlist(
+        _collect_sorted([path for path in iter_files(root, ".dart")]),
         root,
         allowlist_patterns,
     )

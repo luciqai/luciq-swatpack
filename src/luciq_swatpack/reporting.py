@@ -23,6 +23,18 @@ def write_markdown_report(
     lines.append("# Luciq SWAT Pack Report")
     lines.append("")
 
+    # Executive Summary at the top for quick assessment
+    lines.extend(_build_executive_summary(snapshot))
+    lines.append("")
+
+    # Recommendations near the top (actionable items)
+    recommendations = _build_recommendations(snapshot)
+    if recommendations:
+        lines.append("## Recommendations")
+        for rec in recommendations:
+            lines.append(f"- {rec}")
+        lines.append("")
+
     run_metadata = snapshot["run_metadata"]
     lines.append("## Run Metadata")
     lines.append(f"- Timestamp (UTC): {run_metadata['timestamp_utc']}")
@@ -283,12 +295,7 @@ def write_markdown_report(
         lines.append(f"- {key.replace('_', ' ')}: {value or 'unavailable'}")
     lines.append("")
 
-    recommendations = _build_recommendations(snapshot)
-    if recommendations:
-        lines.append("## Recommendations")
-        for rec in recommendations:
-            lines.append(f"- {rec}")
-        lines.append("")
+    # Note: Recommendations are now shown at the top of the report
 
     if snapshot["extra_findings"]:
         lines.append("## Extra Findings")
@@ -389,36 +396,93 @@ def write_markdown_report(
 
 
 def _build_recommendations(snapshot: Dict[str, Any]) -> List[str]:
+    """Build actionable recommendations based on detected configuration."""
     recs: List[str] = []
     usage = snapshot["luciq_usage"]
     sdk = snapshot["luciq_sdk"]
     env = snapshot["environment"]
     project = snapshot["project_identity"]
+    token_info = snapshot["token_analysis"]
+    symbolication = snapshot["symbolication"]
+    privacy = snapshot["privacy_settings"]
 
-    if usage["network_logging_found"] and not usage["network_masking_found"]:
-        recs.append(
-            "Network logging detected without request obfuscation. Consider enabling NetworkLogger.setRequestObfuscationHandler."
-        )
-    if usage["network_logging_found"] and not usage["screenshot_masking_found"]:
-        recs.append(
-            "Network logging detected without screenshot masking; verify Luciq.setAutoMaskScreenshots is intentionally disabled."
-        )
-    if usage["init_found"] and not usage["invocation_events_detected"]:
-        recs.append(
-            "Luciq.start uses manual invocation only. Confirm Support knows how to trigger Luciq in this build."
-        )
+    # Critical issues first
     if sdk["luciq_installed"] and not usage["init_found"]:
         recs.append(
-            "Luciq SDK detected but Luciq.start was not found. Ensure initialization occurs before reproducing issues."
+            "**CRITICAL:** Luciq SDK detected but Luciq.start was not found. "
+            "Ensure initialization occurs before reproducing issues."
         )
-    if "cocoapods" in project["build_systems_detected"] and not env.get(
-        "cocoapods_version"
-    ):
-        recs.append("CocoaPods project detected but `pod --version` not available on this host.")
-    if "carthage" in project["build_systems_detected"] and not env.get(
-        "carthage_version"
-    ):
-        recs.append("Carthage project detected but `carthage version` not available on this host.")
+
+    if token_info["placeholder_token_detected"]:
+        recs.append(
+            "**CRITICAL:** Placeholder token detected (e.g., 'YOUR-TOKEN-HERE'). "
+            "Replace with actual app token from dashboard."
+        )
+
+    if token_info["multiple_tokens_detected"]:
+        recs.append(
+            "**WARNING:** Multiple tokens detected. Verify the correct token is being used "
+            "for the target environment."
+        )
+
+    # Invocation issues
+    if usage["init_found"] and not usage["invocation_events_detected"]:
+        recs.append(
+            "Luciq.start uses manual invocation only (no shake/screenshot/floatingButton). "
+            "Confirm Support knows how to trigger Luciq in this build."
+        )
+
+    # Privacy/masking issues
+    if usage["network_logging_found"] and not usage["network_masking_found"]:
+        recs.append(
+            "Network logging detected without request obfuscation. "
+            "Consider enabling NetworkLogger.setRequestObfuscationHandler to mask sensitive headers."
+        )
+
+    if usage["network_logging_found"] and not usage["screenshot_masking_found"]:
+        recs.append(
+            "Network logging detected without screenshot masking. "
+            "Verify Luciq.setAutoMaskScreenshots is intentionally disabled or configure masking."
+        )
+
+    # Missing masking for sensitive headers
+    missing_headers = privacy.get("missing_header_terms", [])
+    if missing_headers:
+        recs.append(
+            f"Network masking may be incomplete. Consider masking these headers: {', '.join(missing_headers)}"
+        )
+
+    # User identification
+    if usage["init_found"] and not usage["identify_hooks_found"]:
+        recs.append(
+            "No Luciq.identifyUser calls detected. User identification helps correlate "
+            "reports with specific users in the dashboard."
+        )
+
+    if usage["identify_hooks_found"] and not usage["logout_hooks_found"]:
+        recs.append(
+            "identifyUser detected but no logOut call found. Consider calling Luciq.logOut() "
+            "when users sign out to properly clear user context."
+        )
+
+    # Symbolication
+    if sdk["luciq_installed"] and not symbolication["dsym_upload_detected"]:
+        recs.append(
+            "No dSYM upload script detected. Crash reports may not be properly symbolicated. "
+            "See: https://docs.luciq.ai/docs/ios-symbolication"
+        )
+
+    # Environment checks
+    if "cocoapods" in project["build_systems_detected"] and not env.get("cocoapods_version"):
+        recs.append(
+            "CocoaPods project detected but `pod --version` not available on this host."
+        )
+
+    if "carthage" in project["build_systems_detected"] and not env.get("carthage_version"):
+        recs.append(
+            "Carthage project detected but `carthage version` not available on this host."
+        )
+
     return recs
 
 
@@ -428,4 +492,89 @@ def _format_snippet_block(snippet: str, indent: str = "") -> List[str]:
     block.extend(f"{indent}{line}" for line in snippet_lines)
     block.append(f"{indent}```")
     return block
+
+
+def _build_executive_summary(snapshot: Dict[str, Any]) -> List[str]:
+    """Build a quick at-a-glance summary for SWAT team assessment."""
+    lines: List[str] = []
+    lines.append("## Executive Summary")
+    lines.append("")
+
+    sdk = snapshot["luciq_sdk"]
+    usage = snapshot["luciq_usage"]
+    module_states = snapshot["module_states"]
+    privacy = snapshot["privacy_settings"]
+    token_info = snapshot["token_analysis"]
+    symbolication = snapshot["symbolication"]
+
+    # Quick health indicators
+    lines.append("### Quick Health Check")
+    lines.append("")
+    lines.append("| Check | Status |")
+    lines.append("|-------|--------|")
+
+    # SDK Installation
+    sdk_status = "Installed" if sdk["luciq_installed"] else "NOT FOUND"
+    lines.append(f"| SDK Installed | {sdk_status} |")
+
+    # Initialization
+    init_status = "Found" if usage["init_found"] else "NOT FOUND"
+    lines.append(f"| Luciq.start() | {init_status} |")
+
+    # Invocation events
+    events = usage["invocation_events_detected"]
+    events_status = ", ".join(events) if events else "NONE"
+    lines.append(f"| Invocation Events | {events_status} |")
+
+    # User identification
+    identify_status = "Configured" if usage["identify_hooks_found"] else "Not detected"
+    lines.append(f"| User Identification | {identify_status} |")
+
+    # Network masking
+    if usage["network_logging_found"]:
+        mask_status = "Configured" if usage["network_masking_found"] else "MISSING"
+    else:
+        mask_status = "N/A (no network logging)"
+    lines.append(f"| Network Masking | {mask_status} |")
+
+    # Screenshot masking
+    screenshot_status = "Configured" if usage["screenshot_masking_found"] else "Not detected"
+    lines.append(f"| Screenshot Masking | {screenshot_status} |")
+
+    # Symbolication
+    dsym_status = "Configured" if symbolication["dsym_upload_detected"] else "Not detected"
+    lines.append(f"| dSYM Upload | {dsym_status} |")
+
+    # Token status
+    if token_info["placeholder_token_detected"]:
+        token_status = "PLACEHOLDER DETECTED"
+    elif token_info["multiple_tokens_detected"]:
+        token_status = "Multiple tokens found"
+    elif token_info["tokens_detected"]:
+        token_status = "OK"
+    else:
+        token_status = "Not detected in code"
+    lines.append(f"| Token Status | {token_status} |")
+
+    lines.append("")
+
+    # Integration summary
+    lines.append(f"**Integration Method:** {sdk['integration_method']}")
+    if sdk["sdk_versions_detected"]:
+        versions = ", ".join(sdk["sdk_versions_detected"])
+        lines.append(f"**SDK Version(s):** {versions}")
+
+    # Count issues
+    issues_count = 0
+    if snapshot.get("extra_findings"):
+        issues_count += len(snapshot["extra_findings"])
+    pipeline = snapshot.get("symbol_pipeline", {})
+    for platform_info in pipeline.values():
+        if isinstance(platform_info, dict) and platform_info.get("issues"):
+            issues_count += len(platform_info["issues"])
+
+    if issues_count > 0:
+        lines.append(f"**Issues Detected:** {issues_count}")
+
+    return lines
 

@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: luciq-swatpack
-Version: 0.1.2
+Version: 0.1.3
 Summary: Deterministic Luciq SWAT Pack collector
 Author-email: Fares Nabil <support@luciq.ai>
 Requires-Python: >=3.10
@@ -13,6 +13,22 @@ Requires-Dist: pyyaml>=6.0
 # luciq-swatpack
 
 `luciq-swatpack` is a deterministic, privacy-conscious CLI that generates SWAT Pack diagnostics snapshots for Luciq Support/SE workflows. It runs entirely on the customer’s machine, never uploads data, and only records approved metadata (paths, versions, line numbers) so customers can confidently share the outputs with Luciq. The codebase is intentionally boring, dependency-light, and ready to extend to Android or other platforms without breaking today’s contract.
+
+## Quick start (pip install)
+
+If you only need the CLI (no repo cloning required):
+
+```bash
+# make sure Python 3.10+ is on PATH (macOS: /opt/homebrew/bin/python3)
+python3 -m pip install --upgrade pip
+python3 -m pip install luciq-swatpack
+luciq-swatpack --version
+
+# run against any checkout (defaults to current directory)
+luciq-swatpack scan /path/to/app --include-ci-hints --output-dir ./luciq_swatpack_out
+```
+
+The command prints the capture manifest + privacy FAQ before reading any files, then writes `luciq_swatpack.json`, `luciq_swatpack_report.md`, and `luciq_swatpack.log` into the chosen `--output-dir`. Delete the folder any time to regenerate a clean run. For air‑gapped demos, keep a pre-built wheel in `dist/` and run `python3 -m pip install dist/luciq_swatpack-<version>-py3-none-any.whl`.
 
 ## Guarantees
 
